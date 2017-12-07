@@ -44,10 +44,12 @@ class SRResNet(nn.Module):
         self.upscale4x = nn.Sequential(
             nn.Conv2d(in_channels=64, out_channels=256, kernel_size=3, stride=1, padding=1, bias=False),
             nn.PixelShuffle(2),
-            nn.LeakyReLU(0.2, inplace=True),
+            #nn.LeakyReLU(0.2, inplace=True),
+            nn.PReLU(num_parameters=1,init=0.2),
             nn.Conv2d(in_channels=64, out_channels=256, kernel_size=3, stride=1, padding=1, bias=False),
             nn.PixelShuffle(2),
-            nn.LeakyReLU(0.2, inplace=True),
+            #nn.LeakyReLU(0.2, inplace=True),
+            nn.PReLU(num_parameters=1,init=0.2),
         )
 
         self.conv_output = nn.Conv2d(in_channels=64, out_channels=3, kernel_size=9, stride=1, padding=4, bias=False)
