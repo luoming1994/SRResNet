@@ -11,35 +11,45 @@ import math
 import torch.nn.init as init
 
 class _Residual_Block(nn.Module):
-    def __init__(self):
+    def __init__(self,bn = True):
         super(_Residual_Block, self).__init__()
         
+        self.bn = bn
         self.conv1 = nn.Conv2d(in_channels=64, out_channels=64, kernel_size=3, stride=1, padding=1, bias=False)
-        self.bn1 = nn.BatchNorm2d(64)
-        #self.relu = nn.LeakyReLU(0.2, inplace=True)
         self.relu = nn.PReLU(num_parameters=1,init=0.2)
         self.conv2 = nn.Conv2d(in_channels=64, out_channels=64, kernel_size=3, stride=1, padding=1, bias=False)
-        self.bn2 = nn.BatchNorm2d(64)
+        if bn:
+            self.bn1 = nn.BatchNorm2d(64)
+            self.bn2 = nn.BatchNorm2d(64)
         
     def forward(self, x):
-        identity_data = x
-        output = self.relu(self.bn1(self.conv1(x)))
-        output = self.bn2(self.conv2(output))
-        output = torch.add(output,identity_data)
+        output = self.conv1(x)
+        if self.bn:
+            output =self.bn1(output)
+        output = self.relu(output)
+        output = self.conv2(output)
+        if self.bn:
+            output = self.bn2(output)
+        output = torch.add(output,x)
         return output 
 
 class SRResNet(nn.Module):
-    def __init__(self):
+    def __init__(self,io_channels = 3,bn = True):
+        """
+        in and out channel = io_channels;RGB mode io_channels =3 ,Y channel io_channels = 1
+        """
         super(SRResNet, self).__init__()
         
-        self.conv_input = nn.Conv2d(in_channels=3, out_channels=64, kernel_size=9, stride=1, padding=4, bias=False)
+        self.bn = bn
+        self.conv_input = nn.Conv2d(in_channels = io_channels, out_channels=64, kernel_size=9, stride=1, padding=4, bias=False)
         #self.relu = nn.LeakyReLU(0.2, inplace=True)
         self.relu = nn.PReLU(num_parameters=1,init=0.2)
         
-        self.residual = self.make_layer(_Residual_Block, 16)
+        self.residual = self.make_layer(_Residual_Block, bn, 16)
 
         self.conv_mid = nn.Conv2d(in_channels=64, out_channels=64, kernel_size=3, stride=1, padding=1, bias=False)
-        self.bn_mid = nn.BatchNorm2d(64)
+        if self.bn:
+            self.bn_mid = nn.BatchNorm2d(64)
 
         self.upscale4x = nn.Sequential(
             nn.Conv2d(in_channels=64, out_channels=256, kernel_size=3, stride=1, padding=1, bias=False),
@@ -52,7 +62,7 @@ class SRResNet(nn.Module):
             nn.PReLU(num_parameters=1,init=0.2),
         )
 
-        self.conv_output = nn.Conv2d(in_channels=64, out_channels=3, kernel_size=9, stride=1, padding=4, bias=False)
+        self.conv_output = nn.Conv2d(in_channels=64, out_channels = io_channels, kernel_size=9, stride=1, padding=4, bias=False)
         
         # init the weight of conv2d
         for m in self.modules():
@@ -67,17 +77,19 @@ class SRResNet(nn.Module):
                 if m.bias is not None:
                     m.bias.data.zero_()
                 
-    def make_layer(self, block, num_of_layer):
+    def make_layer(self, block, bn, num_of_layer):
         layers = []
         for _ in range(num_of_layer):
-            layers.append(block())
+            layers.append(block(bn = bn))
         return nn.Sequential(*layers)
 
     def forward(self, x):
         out = self.relu(self.conv_input(x))
-        residual = out
+        residual = out.clone()
         out = self.residual(out)
-        out = self.bn_mid(self.conv_mid(out))
+        out = self.conv_mid(out)
+        if self.bn:
+            out = self.bn_mid(out)
         out = torch.add(out,residual)
         out = self.upscale4x(out)
         out = self.conv_output(out)

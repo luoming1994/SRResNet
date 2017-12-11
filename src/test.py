@@ -13,10 +13,11 @@ import time, math
 import scipy.io as sio
 import matplotlib.pyplot as plt
 from SRResNet import SRResNet
+from tool import Normalize,deNormalize
 
 parser = argparse.ArgumentParser(description="PyTorch SRResNet Test")
 parser.add_argument("--cuda", action="store_true", help="use cuda?")
-parser.add_argument("--model", default="../model/model_epoch_15.pth", type=str, help="model path")
+parser.add_argument("--model", default="../model/model_epoch_500.pth", type=str, help="model path")
 parser.add_argument("--image", default="butterfly_GT", type=str, help="image name")
 parser.add_argument("--scale", default=4, type=int, help="scale factor, Default: 4")
 
@@ -29,6 +30,12 @@ def PSNR(pred, gt, shave_border=0):
     if rmse == 0:
         return 100
     return 20 * math.log10(255.0 / rmse)
+
+normal = Normalize(mean = [0.485, 0.456, 0.406],
+                   std = [0.229, 0.224, 0.225])
+deNormal = deNormalize(mean = [0.485, 0.456, 0.406],
+                       std = [0.229, 0.224, 0.225])
+
 
 opt = parser.parse_args()
 cuda = opt.cuda
@@ -49,6 +56,8 @@ im_l = im_l.astype(float).astype(np.uint8)
 im_input = im_l.astype(np.float32).transpose(2,0,1)
 im_input = im_input.reshape(1,im_input.shape[0],im_input.shape[1],im_input.shape[2])
 im_input = Variable(torch.from_numpy(im_input/255.).float())
+# no
+#im_input = normal(im_input)
 
 #model = torch.load(opt.model)["model"]
 model = SRResNet()
@@ -65,8 +74,10 @@ out = model(im_input)
 elapsed_time = time.time() - start_time
 
 out = out.cpu()
+out = out.data[0]
+#out = deNormal(out.data[0])
 
-im_h = out.data[0].numpy().astype(np.float32)
+im_h = out.numpy().astype(np.float32)
 
 im_h = im_h*255.
 im_h[im_h<0] = 0
