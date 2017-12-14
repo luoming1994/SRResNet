@@ -13,7 +13,7 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.autograd import Variable
 from torch.utils.data import DataLoader
-from SRResNet import SRResNet
+from SRResNet import SRResNet,SRResNet_RGBY
 from data import DIV2K
 from torchvision import models
 import torch.utils.model_zoo as model_zoo
@@ -65,8 +65,12 @@ def main():
     cudnn.benchmark = True
         
     print("===> Loading datasets")
-    dataPath = r'/home/we/devsda1/lm/DIV2K/DIV2K_SRResNet200.npz'
-    train_set = DIV2K(dataPath)
+    #dataPath = r'/home/we/devsda1/lm/DIV2K/DIV2K_Ch[RGB][RGB]_Size[24][96]_num[200].npz'
+    #train_set = DIV2K(dataPath,in_channels =3,out_channels = 3)
+    #dataPath = r'/home/we/devsda1/lm/DIV2K/DIV2K_Ch[Y][Y]_Size[24][96]_num[200].npz'
+    #train_set = DIV2K(dataPath,in_channels =1,out_channels = 1)
+    dataPath = r'/home/we/devsda1/lm/DIV2K/DIV2K_Ch[RGB][RGB]_Size[24][96]_num[200].npz'
+    train_set = DIV2K(dataPath,in_channels =3,out_channels = 3)
     training_data_loader = DataLoader(dataset=train_set, num_workers=opt.threads, batch_size=opt.batchSize, shuffle=True)
 
     if opt.vgg_loss:
@@ -85,7 +89,8 @@ def main():
         netContent = _content_model()
 
     print("===> Building model")
-    model = SRResNet()
+    model = SRResNet(in_channels =3,out_channels = 3,bn = False)
+    #model=  SRResNet_RGBY(in_channels = 4,out1_channels = 3,out2_channels = 1,bn = False)
     criterion = nn.MSELoss(size_average=False)
 
     print("===> Setting GPU")
@@ -99,9 +104,6 @@ def main():
     if opt.resume:
         if os.path.isfile(opt.resume):
             print("=> loading checkpoint '{}'".format(opt.resume))
-            #checkpoint = torch.load(opt.resume)
-            #opt.start_epoch = checkpoint["epoch"] + 1
-            #model.load_state_dict(checkpoint["model"].state_dict())
             # model_epoch_20.pth => 20
             opt.start_epoch = int(re.split('_',re.split('\.',opt.resume)[-2])[-1]) + 1
             model.load_state_dict(torch.load(opt.resume))
@@ -121,7 +123,7 @@ def main():
     optimizer = optim.Adam(model.parameters(), lr=opt.lr)
 
     print("===> Training")
-    with open(os.path.join('../log','train.log'),'w') as f:
+    with open(os.path.join('../log','train_LR[RGB]HR[RGB].log'),'w') as f:
         for epoch in range(opt.start_epoch, opt.nEpochs + 1):
             train(training_data_loader, optimizer, model, criterion, epoch, f)
             save_checkpoint(model, epoch)
@@ -141,33 +143,31 @@ def train(training_data_loader, optimizer, model, criterion, epoch, file):
     model.train()
 
     for iteration, batch in enumerate(training_data_loader, 1):
-        for j in range(batch[0].shape[0]):  # batchsize
-            batch[0] = normal(batch[0])
-            batch[1] = normal(batch[1])
+        #for j in range(batch[0].shape[0]):  # batchsize
+        #    batch[0] = normal(batch[0])
+        #    batch[1] = normal(batch[1])
         lr, hr = Variable(batch[0]), Variable(batch[1], requires_grad=False)
-        # lr = (lr -mean)/std
-        #lr = normal(lr)
-        #hr = normal(hr)
         if opt.cuda:
             lr = lr.cuda()
             hr = hr.cuda()        
         sr = model(lr)
-        loss = criterion(sr, hr)
+        
+        mseloss = criterion(sr, hr)
 
         if opt.vgg_loss:
             content_input = netContent(sr)
             content_target = netContent(hr)
             content_target = content_target.detach()
             content_loss = criterion(content_input, content_target)
-        
-        optimizer.zero_grad()
+            #netContent.zero_grad()
+            loss = mseloss + 0.006*content_loss
+            #loss = content_loss
+        else:
+            loss = mseloss
 
-        if opt.vgg_loss:
-            netContent.zero_grad()
-            content_loss.backward(retain_variables=True)
-        
+               
+        optimizer.zero_grad() 
         loss.backward()
-
         optimizer.step()
         if opt.vgg_loss:
             write_str = '%f\t%f\n' % (loss.data[0],content_loss.data[0])
@@ -181,7 +181,7 @@ def train(training_data_loader, optimizer, model, criterion, epoch, file):
                 print("===> Epoch[{}]({}/{}): Loss: {:.10f}".format(epoch, iteration, len(training_data_loader), loss.data[0]))
     
 def save_checkpoint(model, epoch):
-    model_out_path = "../model/" + "model_epoch_{}.pth".format(epoch)
+    model_out_path = "../model/" + "model_ch[RGB][RGB]_epoch_{}.pth".format(epoch)
     #state = {"epoch": epoch ,"model": model}
     if not os.path.exists("../model/"):
         os.makedirs("../model/")

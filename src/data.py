@@ -154,13 +154,16 @@ class img2data(object):
         # save images' Y channel
         self.lrY = np.array([],dtype = np.uint8).reshape(-1,self.lr_size,self.lr_size)
         self.hrY = np.array([],dtype = np.uint8).reshape(-1,self.hr_size,self.hr_size)
+        
+        self.lrRGBY = np.array([],dtype = np.uint8).reshape(-1,self.lr_size,self.lr_size)
+        self.hrRGBY = np.array([],dtype = np.uint8).reshape(-1,self.hr_size,self.hr_size)
     
     def loadImgRGB(self):
         for hr_path in self.hr_paths:
             imgs = cut2normal(loadImgRGB2Numpy(hr_path),cut_size = self.hr_size)
             self.hr = np.concatenate((self.hr,imgs),axis=0) # concat
         for lr_path in self.lr_paths:
-            img = loadImgRGB2Numpy(lr_path, down_scale = self.down_scale, up_scale = self.down_scale)
+            img = loadImgRGB2Numpy(lr_path, down_scale = self.down_scale, up_scale = self.up_scale)
             imgs = cut2normal(img,cut_size = self.lr_size)
             self.lr = np.concatenate((self.lr,imgs),axis=0) 
     
@@ -176,7 +179,7 @@ class img2data(object):
             ys = cut2normal(y, cut_size = self.hr_size)
             self.hrY = np.concatenate((self.hrY,ys),axis=0) # concat
         for lr_path in self.lr_paths:
-            y = loadImgYCbCr2Numpy(lr_path, down_scale = self.down_scale, up_scale = self.down_scale)[0:1,:,:]
+            y = loadImgYCbCr2Numpy(lr_path, down_scale = self.down_scale, up_scale = self.up_scale)[0:1,:,:]
             ys = cut2normal(y, cut_size = self.lr_size)
             self.lrY = np.concatenate((self.lrY,ys),axis=0) 
     
@@ -185,6 +188,55 @@ class img2data(object):
         save images' Y channel into disk
         """
         np.savez(save_path,lr = self.lrY, hr = self.hrY)
+    
+    def loadImgLrRGB_HrY(self):
+        """
+        load lr images' RGB channel
+        load hr images' Y channel
+        """
+        # load lr rgb mode
+        for lr_path in self.lr_paths:
+            img = loadImgRGB2Numpy(lr_path, down_scale = self.down_scale, up_scale = self.up_scale)
+            imgs = cut2normal(img, cut_size = self.lr_size)
+            self.lr = np.concatenate((self.lr,imgs),axis=0) 
+        # load hr y mode
+        for hr_path in self.hr_paths:
+            y = loadImgYCbCr2Numpy(hr_path)[0:1,:,:]
+            ys = cut2normal(y, cut_size = self.hr_size)
+            self.hrY = np.concatenate((self.hrY,ys),axis=0) # concat
+    def saveImgLrRGB_HrY(self,save_path):
+        """
+        save lr images' RGB channel and hr images' Y channel,to disk
+        """
+        np.savez(save_path,lr = self.lr, hr = self.hrY)   
+        
+    
+        
+    def loadImgLrRGBY_HrRGBY(self):
+        """
+        load lr images' RGB channel
+        load hr images' Y channel
+        """
+        # load lr rgb mode
+        for lr_path in self.lr_paths:
+            rgb = loadImgRGB2Numpy(lr_path, down_scale = self.down_scale, up_scale = self.up_scale)
+            y = loadImgYCbCr2Numpy(lr_path, down_scale = self.down_scale, up_scale = self.up_scale)[0:1,:,:]
+            rgby = np.concatenate((rgb,y),axis = 0) # concat at axis = 0
+            imgs = cut2normal(rgby, cut_size = self.lr_size)
+            self.lrRGBY = np.concatenate((self.lrRGBY,imgs),axis=0) 
+        # load hr y mode
+        for hr_path in self.hr_paths:
+            rgb = loadImgRGB2Numpy(hr_path)
+            y = loadImgYCbCr2Numpy(hr_path)[0:1,:,:]
+            rgby = np.concatenate((rgb,y),axis = 0) # concat at axis = 0
+            imgs = cut2normal(rgby, cut_size = self.hr_size)
+            self.hrRGBY = np.concatenate((self.hrRGBY,imgs),axis=0) 
+    
+    def saveImgLrRGBY_HrRGBY(self,save_path):
+        """
+        save lr images' RGB channel and hr images' Y channel,to disk
+        """
+        np.savez(save_path,lr = self.lrRGBY, hr = self.hrRGBY)    
         
 
  
@@ -194,21 +246,22 @@ class DIV2K(data.Dataset):
     """
     load DIV2K data set to train the SRResNet
     """
-    def __init__(self,dataPath,channels =3):
+    def __init__(self,dataPath,in_channels =3,out_channels = 3):
         super(DIV2K,self).__init__()
         
         dt = np.load(dataPath)
         self.lr = dt['lr']
         self.hr = dt['hr']
-        self.ch = channels
+        self.in_ch = in_channels
+        self.out_ch= out_channels
     
     def __getitem__(self, index):
         """
         get the index item
         """
         # np.uint8(0~255) => folatTensor (0.0~1.0)
-        lr = numpy2Tensor(self.lr[index*self.ch:(index+1)*self.ch,:,:])
-        hr = numpy2Tensor(self.hr[index*self.ch:(index+1)*self.ch,:,:])
+        lr = numpy2Tensor(self.lr[index*self.in_ch:(index+1)*self.in_ch,:,:])
+        hr = numpy2Tensor(self.hr[index*self.out_ch:(index+1)*self.out_ch,:,:])
         
         return lr,hr
         
@@ -217,7 +270,46 @@ class DIV2K(data.Dataset):
         get the data lens
         """
         
-        return self.lr.shape[0]//self.ch
+        return self.lr.shape[0]//self.in_ch
+    
+
+class DiscData(data.Dataset):
+    """
+    load DIV2K data lr hr,
+    """
+    def __init__(self,dataPath,channels =3):
+        super(DiscData,self).__init__()
+        
+        dt = np.load(dataPath)
+        #self.lr = dt['lr']
+        #self.hr = dt['hr']
+        self.ch = channels
+        self.len = dt['lr'].shape[0]//self.ch
+        self.data = np.concatenate((dt['lr'],dt['hr']) )
+        self.label = np.concatenate((np.zeros(self.len,dtype=np.float32),
+                                     np.ones(self.len,dtype=np.float32)),
+                                    axis = 0).reshape(-1,1)
+        
+    
+    def __getitem__(self, index):
+        """
+        get the index item
+        """
+        # np.uint8(0~255) => folatTensor (0.0~1.0)
+        
+       
+        data = numpy2Tensor(self.data[index*self.ch:(index+1)*self.ch,:,:])
+        #label = np.asarray(self.label[index])       # number => array
+        label = torch.from_numpy(self.label[index]).float()      # must be array,if number(asarray)
+        return data,label
+
+        
+    def __len__(self):
+        """
+        get the data lens
+        """
+        
+        return 2*self.len
     
         
 
@@ -227,25 +319,31 @@ def main():
     convert images into data
     """
     sysstr = platform.system()
+    
     if(sysstr =="Windows"): # Windows
+        root_dir = r'E:\Data\DIV2K'
         hr_dir = r'E:\Data\DIV2K\DIV2K_train_HR'
         lr_dir = r'E:\Data\DIV2K\DIV2K_train_LR_bicubic\X4'
-        rgbPath= r'E:\Data\DIV2K\DIV2K_RGB_SizeLR24HR96_num800.npz'
-        yPath   = r'E:\Data\DIV2K\DIV2K_Y_SizeLR24HR96_num800.npz'
     elif(sysstr == "Linux"): # Linux
+        root_dir = r'/home/we/devsda1/lm/DIV2K'
         hr_dir = r'/home/we/devsda1/lm/DIV2K/DIV2K_train_HR'
         lr_dir = r'/home/we/devsda1/lm/DIV2K/DIV2K_train_LR_bicubic/X4'
-        rgbPath = r'/home/we/devsda1/lm/DIV2K/DIV2K_RGB_SizeLR24HR96_num800.npz'
-        yPath   = r'/home/we/devsda1/lm/DIV2K/DIV2K_Y_SizeLR24HR96_num800.npz'
     else:
         print ("don't support the system")
     
     
-    dt = img2data(hr_dir, lr_dir,hr_size = 96,lr_size =24, img_num = 800)
+    #dt = img2data(hr_dir, lr_dir, hr_size = 96,lr_size =96, img_num = 200)
+    #dt.loadImgRGB()
+    #dt.saveImgRGB(os.path.join(root_dir,'DIV2K_Ch[RGB][RGB]_Size[24][96]_num[200].npz'))
+    #dt.loadImgYChannel()
+    #dt.saveImgYChannel(os.path.join(root_dir,'DIV2K_Ch[Y][Y]_Size[24][96]_num[200].npz')
+    #dt.loadImgLrRGB_HrY()
+    #dt.saveImgLrRGB_HrY(os.path.join(root_dir,'DIV2K_Ch[RGB][Y]_Size[24][96]_num[200].npz')
+    
+    # lr imgae scale *4 (24 => 96),hr image (96)
+    dt = img2data(hr_dir, lr_dir,up_scale =4, hr_size = 96,lr_size =96, img_num = 200)
     dt.loadImgRGB()
-    dt.saveImgRGB(rgbPath)
-    dt.loadImgYChannel()
-    dt.saveImgYChannel(yPath)
+    dt.saveImgRGB(os.path.join(root_dir,'DIV2K_Ch[RGB][RGB]_Size[96][96]_num[200].npz'))
     
     
 
