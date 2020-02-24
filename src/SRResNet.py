@@ -16,7 +16,8 @@ class _Residual_Block(nn.Module):
         
         self.bn = bn
         self.conv1 = nn.Conv2d(in_channels=64, out_channels=64, kernel_size=3, stride=1, padding=1, bias=False)
-        self.relu = nn.PReLU(num_parameters=1,init=0.2)
+        self.relu1 = nn.PReLU(num_parameters=1,init=0.2)
+        self.relu2 = nn.PReLU(num_parameters=1,init=0.2)
         self.conv2 = nn.Conv2d(in_channels=64, out_channels=64, kernel_size=3, stride=1, padding=1, bias=False)
         if bn:
             self.bn1 = nn.BatchNorm2d(64)
@@ -26,12 +27,13 @@ class _Residual_Block(nn.Module):
         output = self.conv1(x)
         if self.bn:
             output =self.bn1(output)
-        output = self.relu(output)
+        output = self.relu1(output)
         output = self.conv2(output)
         if self.bn:
             output = self.bn2(output)
         output = torch.add(output,x)
-        return output 
+        output = self.relu2(output)
+        return output
 
 class SRResNet(nn.Module):
     def __init__(self,in_channels = 3,out_channels = 3,bn = True):
